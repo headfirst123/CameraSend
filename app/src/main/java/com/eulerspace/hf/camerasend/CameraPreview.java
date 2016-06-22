@@ -13,6 +13,7 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.Date;
 import java.util.List;
 
 import android.graphics.ImageFormat;
@@ -30,7 +31,7 @@ public class CameraPreview extends AppCompatActivity
         implements SurfaceHolder.Callback, PreviewCallback {
 
     private final String Tag = "CameraPreview";
-    boolean isMultiBroadcast = true;
+    boolean isMultiBroadcast = false;
     DatagramSocket socket;
     InetAddress address;
     WifiManager.MulticastLock lock;
@@ -40,8 +41,17 @@ public class CameraPreview extends AppCompatActivity
     SurfaceHolder m_surfaceHolder;
     int width = 1920;
     int height = 1080;
-    int framerate = 30;
-    int bitrate = 2500000;
+    int framerate = 60;
+    int bitrate = 16000000;
+    /*
+    480P	720X480	1800Kbps
+    720P	1280X720	3500Kbps
+    1080P	1920X1080	8500Kbps
+
+    */
+    long t1 = 0;
+    long t2 = 0;
+    int send_len = 0;
 
     byte[] h264 = new byte[width * height * 3 / 2];
 
@@ -91,8 +101,9 @@ public class CameraPreview extends AppCompatActivity
                 }
             } else {
                 socket = new DatagramSocket();
-                address = InetAddress.getByName("10.0.0.61");
+                address = InetAddress.getByName("10.0.0.65");
             }
+            t1 = new Date().getTime();
         } catch (SocketException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -171,9 +182,12 @@ public class CameraPreview extends AppCompatActivity
                 Log.e(Tag,"multicast send error");
                 e.printStackTrace();
             }
+            send_len += ret;
         }
-        Log.i(Tag, "h264 end");
-
+        t2 = new Date().getTime();
+        long speed = send_len / (t2 - t1) * 1000 / 1024;
+        Log.i(Tag, "h264 end send " + ret + " " + speed + "KB/S " + (isMultiBroadcast ? "MC" : "UDP"));
     }
+
 
 }
