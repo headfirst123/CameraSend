@@ -21,7 +21,6 @@ import android.hardware.Camera;
 import android.hardware.Camera.PreviewCallback;
 import android.os.StrictMode;
 import android.util.Log;
-import android.view.Menu;
 import android.view.SurfaceHolder;
 import android.view.SurfaceHolder.Callback;
 import android.view.SurfaceView;
@@ -31,7 +30,7 @@ public class CameraPreview extends AppCompatActivity
         implements SurfaceHolder.Callback, PreviewCallback {
 
     private final String Tag = "CameraPreview";
-    boolean isMultiBroadcast = false;
+    private final boolean isMultiBroadcast = false;
     DatagramSocket socket;
     InetAddress address;
     WifiManager.MulticastLock lock;
@@ -45,8 +44,8 @@ public class CameraPreview extends AppCompatActivity
     int bitrate = 16000000;
     /*
     480P	720X480	1800Kbps
-    720P	1280X720	3500Kbps
-    1080P	1920X1080	8500Kbps
+    720P	1280X720	3500Kbps *2
+    1080P	1920X1080	8500Kbps *2
 
     */
     long t1 = 0;
@@ -55,13 +54,11 @@ public class CameraPreview extends AppCompatActivity
 
     byte[] h264 = new byte[width * height * 3 / 2];
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-
+    private void setStrictMode() {
         StrictMode.setThreadPolicy(new StrictMode.ThreadPolicy.Builder()
                 .detectDiskReads()
                 .detectDiskWrites()
-                .detectAll()   // or .detectAll() for all detectable problems
+                .detectAll()
                 .penaltyLog()
                 .build());
         StrictMode.setVmPolicy(new StrictMode.VmPolicy.Builder()
@@ -71,11 +68,10 @@ public class CameraPreview extends AppCompatActivity
                 .penaltyDeath()
                 .build());
 
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_camera_preview);
+    }
 
+    private void init() {
         avcCodec = new AVCEncode(width, height, framerate, bitrate);
-
         m_prevewview = (SurfaceView) findViewById(R.id.surfaceViewPlay);
         m_surfaceHolder = m_prevewview.getHolder(); // 绑定SurfaceView，取得SurfaceHolder对象
         m_surfaceHolder.setFixedSize(width, height); // 预览大小設置
@@ -90,14 +86,14 @@ public class CameraPreview extends AppCompatActivity
                     socket = new MulticastSocket();
                     String BROADCAST_IP = "239.10.0.0";
                     //IP协议多点广播地址范围:224.0.0.0---239.255.255.255,其中224.0.0.0为系统自用
-                     address = InetAddress.getByName(BROADCAST_IP);
+                    address = InetAddress.getByName(BROADCAST_IP);
                     ((MulticastSocket) socket).joinGroup(address);
-                    Log.i(Tag,"create MulticastSocket");
+                    Log.i(Tag, "create MulticastSocket");
 
                 } catch (Exception e) {
                     //// TODO: 2016-06-21
                     e.printStackTrace();
-                    Log.e(Tag,"error exception create MulticastSocket"+e.getMessage());
+                    Log.e(Tag, "error exception create MulticastSocket" + e.getMessage());
                 }
             } else {
                 socket = new DatagramSocket();
@@ -111,7 +107,13 @@ public class CameraPreview extends AppCompatActivity
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
-
+    }
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        setStrictMode();
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_camera_preview);
+        init();
     }
 
 
@@ -155,7 +157,7 @@ public class CameraPreview extends AppCompatActivity
 
     @Override
     public void surfaceDestroyed(SurfaceHolder arg0) {
-        m_camera.setPreviewCallback(null); //！！这个必须在前，不然退出出错
+        m_camera.setPreviewCallback(null);
         m_camera.stopPreview();
         m_camera.release();
         m_camera = null;
@@ -166,12 +168,12 @@ public class CameraPreview extends AppCompatActivity
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
 
-        Log.i(Tag, "h264 start");
-        int ret = avcCodec.offerEncoder(data, h264);
+        Log.i(Tag, "h264 send");
+        int encode_len = avcCodec.offerEncoder(data, h264);
 
-        if (ret > 0) {
+        if (encode_len > 0) {
             try {
-                DatagramPacket packet = new DatagramPacket(h264, ret, address, 5000);
+                DatagramPacket packet = new DatagramPacket(h264, encode_len, address, 5000);
                 if (isMultiBroadcast) {
                     lock.acquire();
                     socket.send(packet);
@@ -182,11 +184,11 @@ public class CameraPreview extends AppCompatActivity
                 Log.e(Tag,"multicast send error");
                 e.printStackTrace();
             }
-            send_len += ret;
+            send_len += encode_len;
         }
         t2 = new Date().getTime();
         long speed = send_len / (t2 - t1) * 1000 / 1024;
-        Log.i(Tag, "h264 end send " + ret + " " + speed + "KB/S " + (isMultiBroadcast ? "MC" : "UDP"));
+        Log.i(Tag, "h264 end send " + encode_len + " " + speed + "KB/S " + (isMultiBroadcast ? "MC" : "UDP"));
     }
 
 

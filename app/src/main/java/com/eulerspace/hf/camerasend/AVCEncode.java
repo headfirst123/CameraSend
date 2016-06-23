@@ -71,6 +71,7 @@ public class AVCEncode {
             if (inputBufferIndex >= 0) {
                 ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
                 inputBuffer.clear();
+                //Log.i("buffer","input buffer size :"+inputBuffer.);//different  every time
                 inputBuffer.put(yuv420);
                 mediaCodec.queueInputBuffer(inputBufferIndex, 0, yuv420.length, 0, 0);
             }
@@ -81,6 +82,7 @@ public class AVCEncode {
             while (outputBufferIndex >= 0) {
                 ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
                 byte[] outData = new byte[bufferInfo.size];
+                //Log.i("buffer","output buffer size :"+bufferInfo.size);//different  every time
                 outputBuffer.get(outData);
 
                 if (m_info != null) {
