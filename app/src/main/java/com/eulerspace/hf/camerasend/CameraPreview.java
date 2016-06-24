@@ -41,7 +41,7 @@ public class CameraPreview extends AppCompatActivity
     int width = 1920;
     int height = 1080;
     int framerate = 60;
-    int bitrate = 16000000;
+    int bitrate = 8000000;
     /*
     480P	720X480	1800Kbps
     720P	1280X720	3500Kbps *2
@@ -53,6 +53,8 @@ public class CameraPreview extends AppCompatActivity
     int send_len = 0;
 
     byte[] h264 = new byte[width * height * 3 / 2];
+
+    H264ToMpeg h264ToMpeg = null;
 
     private void setStrictMode() {
         StrictMode.setThreadPolicy(new StrictMode.ThreadPolicy.Builder()
@@ -78,6 +80,9 @@ public class CameraPreview extends AppCompatActivity
         m_surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         m_surfaceHolder.addCallback((Callback) this);
 
+        h264ToMpeg = new H264ToMpeg(avcCodec.mediaCodec.getOutputFormat());
+        h264ToMpeg.start();
+
         try {
             if (isMultiBroadcast)//multicast
             {
@@ -97,8 +102,10 @@ public class CameraPreview extends AppCompatActivity
                 }
             } else {
                 socket = new DatagramSocket();
-                address = InetAddress.getByName("10.0.0.65");
+                //address = InetAddress.getByName("10.0.0.65");
+                address = InetAddress.getByName("192.168.43.1");
             }
+
             t1 = new Date().getTime();
         } catch (SocketException e) {
             // TODO Auto-generated catch block
@@ -162,6 +169,7 @@ public class CameraPreview extends AppCompatActivity
         m_camera.release();
         m_camera = null;
         avcCodec.close();
+        h264ToMpeg.release();
     }
 
 
@@ -169,20 +177,21 @@ public class CameraPreview extends AppCompatActivity
     public void onPreviewFrame(byte[] data, Camera camera) {
 
         Log.i(Tag, "h264 send");
-        int encode_len = avcCodec.offerEncoder(data, h264);
+        int retry = 5;
+        int encode_len = avcCodec.offerEncoder(data, h264, h264ToMpeg);
 
         if (encode_len > 0) {
-            try {
-                DatagramPacket packet = new DatagramPacket(h264, encode_len, address, 5000);
-                if (isMultiBroadcast) {
-                    lock.acquire();
-                    socket.send(packet);
-                    lock.release();
-                } else
-                    socket.send(packet);
-            } catch (IOException e) {
-                Log.e(Tag,"multicast send error");
-                e.printStackTrace();
+
+            DatagramPacket packet = new DatagramPacket(h264, encode_len, address, 5000);
+            while (retry > 0) {
+                try {
+                    sendPacket(packet);
+                    retry = 0;
+                } catch (IOException e) {
+                    Log.e(Tag, "multicast send error retry " + retry);
+                    retry--;
+                    e.printStackTrace();
+                }
             }
             send_len += encode_len;
         }
@@ -191,5 +200,12 @@ public class CameraPreview extends AppCompatActivity
         Log.i(Tag, "h264 end send " + encode_len + " " + speed + "KB/S " + (isMultiBroadcast ? "MC" : "UDP"));
     }
 
-
+    private void sendPacket(DatagramPacket packet) throws IOException {
+        if (isMultiBroadcast) {
+            lock.acquire();
+            socket.send(packet);
+            lock.release();
+        } else
+            socket.send(packet);
+    }
 }
