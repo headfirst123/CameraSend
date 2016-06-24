@@ -15,14 +15,11 @@ import android.util.Log;
 
 public class AVCEncode {
 
-    private MediaCodec mediaCodec;
+    MediaCodec mediaCodec;
     int m_width;
     int m_height;
     byte[] m_info = null;
-
-
     private byte[] yuv420 = null;
-
 
     public AVCEncode(int width, int height, int framerate, int bitrate) {
 
@@ -61,7 +58,7 @@ public class AVCEncode {
      * @param output   will send to client data
      * @return   return the length of encoded data , the length will be the socket send data.
      */
-    public int offerEncoder(byte[] input, byte[] output) {
+    public int offerEncoder(byte[] input, byte[] output, H264ToMpeg h264ToMpeg) {
         int pos = 0;
         swapYV12toI420(input, yuv420, m_width, m_height);
         try {
@@ -77,6 +74,7 @@ public class AVCEncode {
             }
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+
             int outputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
 
             while (outputBufferIndex >= 0) {
@@ -98,6 +96,13 @@ public class AVCEncode {
                         return -1;
                     }
                 }
+                /*
+                public void set(int newOffset, int newSize, long newTimeUs, @BufferFlag int newFlags)*/
+                outputBuffer.position(bufferInfo.offset);
+                outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
+
+                if (h264ToMpeg != null)
+                    h264ToMpeg.onFrame(outputBuffer, bufferInfo);
 
                 mediaCodec.releaseOutputBuffer(outputBufferIndex, false);
                 outputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);

@@ -30,7 +30,7 @@ public class CameraPreview extends AppCompatActivity
         implements SurfaceHolder.Callback, PreviewCallback {
 
     private final String Tag = "CameraPreview";
-    private final boolean isMultiBroadcast = false;
+    private final boolean isMultiBroadcast = true;
     DatagramSocket socket;
     InetAddress address;
     WifiManager.MulticastLock lock;
@@ -55,6 +55,7 @@ public class CameraPreview extends AppCompatActivity
     byte[] h264 = new byte[width * height * 3 / 2];
 
     H264ToMpeg h264ToMpeg = null;
+    H264ToFile h264ToFile = null;
 
     private void setStrictMode() {
         StrictMode.setThreadPolicy(new StrictMode.ThreadPolicy.Builder()
@@ -80,8 +81,10 @@ public class CameraPreview extends AppCompatActivity
         m_surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         m_surfaceHolder.addCallback((Callback) this);
 
-        h264ToMpeg = new H264ToMpeg(avcCodec.mediaCodec.getOutputFormat());
-        h264ToMpeg.start();
+        //h264ToMpeg = new H264ToMpeg(avcCodec.mediaCodec.getOutputFormat());
+        //h264ToMpeg.start();
+
+        h264ToFile = new H264ToFile();
 
         try {
             if (isMultiBroadcast)//multicast
@@ -169,7 +172,14 @@ public class CameraPreview extends AppCompatActivity
         m_camera.release();
         m_camera = null;
         avcCodec.close();
-        h264ToMpeg.release();
+        if (h264ToMpeg != null) {
+            h264ToMpeg.release();
+            h264ToMpeg = null;
+        }
+        if (h264ToFile != null) {
+            h264ToFile.release();
+            h264ToFile = null;
+        }
     }
 
 
@@ -194,6 +204,7 @@ public class CameraPreview extends AppCompatActivity
                 }
             }
             send_len += encode_len;
+            h264ToFile.writeToFile(h264, encode_len);
         }
         t2 = new Date().getTime();
         long speed = send_len / (t2 - t1) * 1000 / 1024;
