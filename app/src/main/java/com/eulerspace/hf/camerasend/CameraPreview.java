@@ -2,10 +2,17 @@ package com.eulerspace.hf.camerasend;
 
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.ImageFormat;
+import android.hardware.Camera;
+import android.hardware.Camera.PreviewCallback;
 import android.net.wifi.WifiManager;
-import android.os.SystemClock;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.os.StrictMode;
+import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
+import android.view.SurfaceHolder;
+import android.view.SurfaceHolder.Callback;
+import android.view.SurfaceView;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -14,21 +21,7 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-
-import android.graphics.ImageFormat;
-import android.hardware.Camera;
-import android.hardware.Camera.PreviewCallback;
-import android.os.StrictMode;
-import android.util.Log;
-import android.view.SurfaceHolder;
-import android.view.SurfaceHolder.Callback;
-import android.view.SurfaceView;
 
 
 public class CameraPreview extends AppCompatActivity
@@ -124,6 +117,7 @@ public class CameraPreview extends AppCompatActivity
             e.printStackTrace();
         }
     }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         setStrictMode();
