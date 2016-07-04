@@ -3,6 +3,7 @@ package com.eulerspace.hf.camerasend;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.net.wifi.WifiManager;
+import android.os.SystemClock;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 
@@ -13,7 +14,11 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
 import android.graphics.ImageFormat;
@@ -41,7 +46,7 @@ public class CameraPreview extends AppCompatActivity
     int width = 1920;
     int height = 1080;
     int framerate = 60;
-    int bitrate = 8000000;
+    int bitrate = 16000000;
     /*
     480P	720X480	1800Kbps
     720P	1280X720	3500Kbps *2
@@ -50,6 +55,7 @@ public class CameraPreview extends AppCompatActivity
     */
     long t1 = 0;
     long t2 = 0;
+    long t_send = 0;
     int send_len = 0;
 
     byte[] h264 = new byte[width * height * 3 / 2];
@@ -83,7 +89,7 @@ public class CameraPreview extends AppCompatActivity
 
         //h264ToMpeg = new H264ToMpeg(avcCodec.mediaCodec.getOutputFormat());
         //h264ToMpeg.start();
-
+        //Collections.binarySearch()
         h264ToFile = new H264ToFile();
 
         try {
@@ -96,7 +102,7 @@ public class CameraPreview extends AppCompatActivity
                     //IP协议多点广播地址范围:224.0.0.0---239.255.255.255,其中224.0.0.0为系统自用
                     address = InetAddress.getByName(BROADCAST_IP);
                     ((MulticastSocket) socket).joinGroup(address);
-                    Log.i(Tag, "create MulticastSocket");
+                    Log.i(Tag, "create MulticastSocket  T " + Thread.currentThread().getId());
 
                 } catch (Exception e) {
                     //// TODO: 2016-06-21
@@ -126,6 +132,26 @@ public class CameraPreview extends AppCompatActivity
         init();
     }
 
+    @Override
+    protected void onPause() {
+        Log.i(Tag, "onPause");
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        Log.i(Tag, "onStop");
+        super.onStop();
+
+    }
+
+    @Override
+    protected void onDestroy() {
+        Log.i(Tag, "onDestroy");
+        super.onDestroy();
+        this.finish();
+
+    }
 
     @Override
     public void surfaceChanged(SurfaceHolder arg0, int arg1, int arg2, int arg3) {
@@ -141,23 +167,25 @@ public class CameraPreview extends AppCompatActivity
             parameters.setPreviewSize(width, height);
             parameters.setPictureSize(width, height);
             parameters.setPreviewFormat(ImageFormat.YV12);
-            List<String> sp = parameters.getSupportedFocusModes();
-            Log.i(Tag, "support focus mode:");
-            for (String a : sp) {
-                Log.i(Tag, a);
-            }
+//            List<String> sp = parameters.getSupportedFocusModes();
+//            Log.i(Tag, "support focus mode:");
+//            for (String a : sp) {
+//                Log.i(Tag, a);
+//            }
             parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
-            if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
-                parameters.set("orientation", "portrait");
-                parameters.set("rotation", 90);
-                ;
-                m_camera.setDisplayOrientation(90);
-            } else {
-                parameters.set("orientation", "landscape");
-                m_camera.setDisplayOrientation(0);
-            }
+//            if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+//                parameters.set("orientation", "portrait");
+//                parameters.set("rotation", 90);
+//                ;
+//                m_camera.setDisplayOrientation(90);
+//            } else {
+//                parameters.set("orientation", "landscape");
+//                m_camera.setDisplayOrientation(0);
+//            }
             m_camera.setParameters(parameters);
             m_camera.setPreviewCallback((PreviewCallback) this);
+            //m_camera.addCallbackBuffer();
+            //m_camera.setPreviewCallbackWithBuffer();
             m_camera.startPreview();
 
         } catch (IOException e) {
@@ -172,14 +200,21 @@ public class CameraPreview extends AppCompatActivity
         m_camera.release();
         m_camera = null;
         avcCodec.close();
+        Log.i(Tag, "surfaceDestroyeda");
         if (h264ToMpeg != null) {
             h264ToMpeg.release();
             h264ToMpeg = null;
         }
+        Log.i(Tag, "surfaceDestroyed0");
         if (h264ToFile != null) {
             h264ToFile.release();
             h264ToFile = null;
         }
+        Log.i(Tag, "surfaceDestroyed1");
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+        Log.i(Tag, "surfaceDestroyed");
     }
 
 
@@ -188,8 +223,9 @@ public class CameraPreview extends AppCompatActivity
 
         Log.i(Tag, "h264 send");
         int retry = 5;
+        t_send = new Date().getTime();
         int encode_len = avcCodec.offerEncoder(data, h264, h264ToMpeg);
-
+        data = null;
         if (encode_len > 0) {
 
             DatagramPacket packet = new DatagramPacket(h264, encode_len, address, 5000);
@@ -207,8 +243,10 @@ public class CameraPreview extends AppCompatActivity
             h264ToFile.writeToFile(h264, encode_len);
         }
         t2 = new Date().getTime();
+        //HashMap
         long speed = send_len / (t2 - t1) * 1000 / 1024;
-        Log.i(Tag, "h264 end send " + encode_len + " " + speed + "KB/S " + (isMultiBroadcast ? "MC" : "UDP"));
+
+        Log.i(Tag, " h264 end send " + speed + "KB/S  (" + (t2 - t_send) + "ms) " + (isMultiBroadcast ? "MC" : "UDP"));
     }
 
     private void sendPacket(DatagramPacket packet) throws IOException {
@@ -218,5 +256,13 @@ public class CameraPreview extends AppCompatActivity
             lock.release();
         } else
             socket.send(packet);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        Log.i(Tag, "onConfigurationChanged");
+
+
     }
 }
