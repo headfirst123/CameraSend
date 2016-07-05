@@ -18,7 +18,7 @@ public class H264ToFile {
 
 
     public void writeToFile(byte[] data, int len) {
-        Log.e(TAG, "writeToFile" + data[0] + data[1] + data[2] + data[3] + " --" + len);
+        // Log.e(TAG, "writeToFile" + data[0] + data[1] + data[2] + data[3] + " --" + len);
         if (file == null) {
             file = new File("/sdcard/h264.bin");
             if (!file.exists())

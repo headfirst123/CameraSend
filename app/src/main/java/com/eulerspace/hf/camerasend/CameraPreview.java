@@ -21,14 +21,13 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.Date;
 
 
 public class CameraPreview extends AppCompatActivity
         implements SurfaceHolder.Callback, PreviewCallback {
 
     private final String Tag = "CameraPreview";
-    private final boolean isMultiBroadcast = true;
+    private final boolean isMultiBroadcast = false;
     DatagramSocket socket;
     InetAddress address;
     WifiManager.MulticastLock lock;
@@ -50,8 +49,16 @@ public class CameraPreview extends AppCompatActivity
     long t2 = 0;
     long t_send = 0;
     int send_len = 0;
+    int frameSize = width * height * 3 / 2;
 
-    byte[] h264 = new byte[width * height * 3 / 2];
+    byte[] h264 = new byte[frameSize];
+
+    int packetUnitCount = 0;
+    int packetUnitIndex = 0;
+    int packetUnitLen = 16 * 1024; //16KB
+    byte[] packetUnitData = new byte[packetUnitLen];
+    int packetOffset = 0;
+    DatagramPacket packetUnit = null;
 
     H264ToMpeg h264ToMpeg = null;
     H264ToFile h264ToFile = null;
@@ -102,13 +109,13 @@ public class CameraPreview extends AppCompatActivity
                     e.printStackTrace();
                     Log.e(Tag, "error exception create MulticastSocket" + e.getMessage());
                 }
-            } else {
+            } else {//UDP
                 socket = new DatagramSocket();
-                //address = InetAddress.getByName("10.0.0.65");
-                address = InetAddress.getByName("192.168.43.1");
+                //address = InetAddress.getByName("192.168.43.1");//hotspot
+                address = InetAddress.getByName("10.0.0.2");//connect to AP
             }
 
-            t1 = new Date().getTime();
+            t1 = System.currentTimeMillis();
         } catch (SocketException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -154,6 +161,10 @@ public class CameraPreview extends AppCompatActivity
 
     @Override
     public void surfaceCreated(SurfaceHolder arg0) {
+        initCamera();
+    }
+
+    private void initCamera() {
         try {
             m_camera = Camera.open();
             m_camera.setPreviewDisplay(m_surfaceHolder);
@@ -177,9 +188,11 @@ public class CameraPreview extends AppCompatActivity
 //                m_camera.setDisplayOrientation(0);
 //            }
             m_camera.setParameters(parameters);
-            m_camera.setPreviewCallback((PreviewCallback) this);
-            //m_camera.addCallbackBuffer();
-            //m_camera.setPreviewCallbackWithBuffer();
+
+            //m_camera.setPreviewCallback((PreviewCallback) this);
+            byte[] callbackBuffer = new byte[frameSize];
+            m_camera.addCallbackBuffer(callbackBuffer);
+            m_camera.setPreviewCallbackWithBuffer((PreviewCallback) this);
             m_camera.startPreview();
 
         } catch (IOException e) {
@@ -215,41 +228,79 @@ public class CameraPreview extends AppCompatActivity
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
 
-        Log.i(Tag, "h264 send");
-        int retry = 5;
-        t_send = new Date().getTime();
+        //Log.i(Tag, "h264 send");
+        t_send = System.currentTimeMillis();
         int encode_len = avcCodec.offerEncoder(data, h264, h264ToMpeg);
-        data = null;
         if (encode_len > 0) {
-
-            DatagramPacket packet = new DatagramPacket(h264, encode_len, address, 5000);
-            while (retry > 0) {
-                try {
-                    sendPacket(packet);
-                    retry = 0;
-                } catch (IOException e) {
-                    Log.e(Tag, "multicast send error retry " + retry);
-                    retry--;
-                    e.printStackTrace();
-                }
-            }
+//            if (encode_len > 64 * 1024 &&encode_len<65486*2) { // split to two packet
+//                int packetLen = 65486;//64*1024;
+//                byte[] packetData1 = new byte[packetLen];
+//                Log.i(Tag," e len="+encode_len);
+//                System.arraycopy(h264, 0, packetData1, 0, packetLen);
+//                DatagramPacket packet1 = new DatagramPacket(packetData1, packetLen, address, 5000);
+//                sendPacket(packet1);
+//
+//                System.arraycopy(h264, packetLen, packetData1, 0, encode_len-packetLen);
+//                DatagramPacket packet2 = new DatagramPacket(packetData1, encode_len-packetLen, address, 5000);
+//                sendPacket(packet2);
+//            }
+//            else
+//            {
+//                //maybe should not new object every time,  use setData to update
+//                DatagramPacket packet = new DatagramPacket(h264, encode_len, address, 5000);
+//                sendPacket(packet);
+//            }
+            splitPacket(encode_len);
             send_len += encode_len;
             h264ToFile.writeToFile(h264, encode_len);
         }
-        t2 = new Date().getTime();
+        camera.addCallbackBuffer(data);
+        t2 = System.currentTimeMillis();
         //HashMap
         long speed = send_len / (t2 - t1) * 1000 / 1024;
 
-        Log.i(Tag, " h264 end send " + speed + "KB/S  (" + (t2 - t_send) + "ms) " + (isMultiBroadcast ? "MC" : "UDP"));
+        Log.i(Tag, " h264 send " + encode_len + "  " + speed + "KB/S  (" + (t2 - t_send) + "ms) " + (isMultiBroadcast ? "MC" : "UDP"));
     }
 
-    private void sendPacket(DatagramPacket packet) throws IOException {
-        if (isMultiBroadcast) {
-            lock.acquire();
-            socket.send(packet);
-            lock.release();
-        } else
-            socket.send(packet);
+    // split the h264 frame to many packet unit (default 16KB)
+    private void splitPacket(int encode_len) {
+
+        packetUnitCount = encode_len / packetUnitLen;
+        packetUnitIndex = 0;
+        if (packetUnitData == null) {
+            packetUnitData = new byte[packetUnitLen];
+        }
+        if (packetUnit == null) {
+            packetUnit = new DatagramPacket(packetUnitData, packetUnitLen, address, 5000);
+        }
+        for (packetUnitIndex = 0; packetUnitIndex < packetUnitCount - 1; packetUnitIndex++) {
+            packetOffset = packetUnitLen * packetUnitIndex;
+            //System.arraycopy(h264, packetOffset, packetUnitData, 0, packetUnitLen);
+            packetUnit.setData(h264, packetOffset, packetUnitLen);
+            sendPacket(packetUnit);
+        }
+        //the last packet unit
+        packetOffset = packetUnitLen * packetUnitIndex;
+        //Log.i(Tag,packetOffset+"  "+(encode_len-packetOffset));
+        packetUnit.setData(h264, packetOffset, encode_len - packetOffset);
+        sendPacket(packetUnit);
+    }
+
+    private boolean sendPacket(DatagramPacket packet) {
+        try {
+            if (isMultiBroadcast) {
+                lock.acquire();
+                socket.send(packet);
+                lock.release();
+            } else
+                socket.send(packet);
+            return true;
+        } catch (IOException e) {
+            Log.e(Tag, "send data fail================ " + packet.getLength());
+            e.printStackTrace();
+        }
+        return false;
+
     }
 
     @Override

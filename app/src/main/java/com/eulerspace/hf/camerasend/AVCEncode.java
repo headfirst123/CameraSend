@@ -5,12 +5,13 @@ package com.eulerspace.hf.camerasend;
  */
 
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.util.Log;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
 
 
 public class AVCEncode {
@@ -20,12 +21,14 @@ public class AVCEncode {
     int m_height;
     byte[] m_info = null;
     private byte[] yuv420 = null;
+    int frameSize;
 
     public AVCEncode(int width, int height, int framerate, int bitrate) {
 
         m_width = width;
         m_height = height;
-        yuv420 = new byte[width * height * 3 / 2];
+        frameSize = width * height * 3 / 2;
+        yuv420 = new byte[frameSize];
 
         try {
             mediaCodec = MediaCodec.createEncoderByType("video/avc");
@@ -80,13 +83,14 @@ public class AVCEncode {
             while (outputBufferIndex >= 0) {
                 ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
                 byte[] outData = new byte[bufferInfo.size];
-                //Log.i("buffer","output buffer size :"+bufferInfo.size);//different  every time
+
+                if (frameSize < bufferInfo.size)
+                    Log.e("buffer", "----======output buffer size==========--- :" + bufferInfo.size + " f " + frameSize);//different  every time
                 outputBuffer.get(outData);
 
                 if (m_info != null) {
                     System.arraycopy(outData, 0, output, pos, outData.length);
                     pos += outData.length;
-
                 } else {
                     ByteBuffer spsPpsBuffer = ByteBuffer.wrap(outData);
                     if (spsPpsBuffer.getInt() == 0x00000001) {
@@ -101,7 +105,7 @@ public class AVCEncode {
                 outputBuffer.position(bufferInfo.offset);
                 outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
 
-                if (h264ToMpeg != null)
+                if (h264ToMpeg != null)//save to local file
                     h264ToMpeg.onFrame(outputBuffer, bufferInfo);
 
                 mediaCodec.releaseOutputBuffer(outputBufferIndex, false);
